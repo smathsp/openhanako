@@ -688,6 +688,8 @@ describe("createFeishuAdapter", () => {
       mode: "edit_message",
       scopes: ["dm"],
       maxChars: 150_000,
+      renderer: "post",
+      receiptMode: "fold_into_stream",
     });
 
     const state = await adapter.startStreamReply("oc_chat", "first");
@@ -717,5 +719,36 @@ describe("createFeishuAdapter", () => {
         content: markdownPostContent("final"),
       },
     });
+  });
+
+  it("parses Feishu stream message ids from every SDK response shape", async () => {
+    mockMessageCreate.mockResolvedValueOnce({ message_id: "om_stream_direct" });
+    const adapter = createFeishuAdapter({
+      appId: "app-id",
+      appSecret: "app-secret",
+      agentId: "hana",
+      onMessage: vi.fn(),
+    });
+
+    await expect(adapter.startStreamReply("oc_chat", "first")).resolves.toEqual({
+      messageId: "om_stream_direct",
+    });
+  });
+
+  it("marks created Feishu stream messages without message_id as non-updatable instead of throwing", async () => {
+    mockMessageCreate.mockResolvedValueOnce({ data: {} });
+    const adapter = createFeishuAdapter({
+      appId: "app-id",
+      appSecret: "app-secret",
+      agentId: "hana",
+      onMessage: vi.fn(),
+    });
+
+    const state = await adapter.startStreamReply("oc_chat", "first");
+    await adapter.updateStreamReply("oc_chat", state, "second");
+    await adapter.finishStreamReply("oc_chat", state, "final");
+
+    expect(state).toEqual({ messageId: null, missingMessageId: true });
+    expect(mockMessageUpdate).not.toHaveBeenCalled();
   });
 });
