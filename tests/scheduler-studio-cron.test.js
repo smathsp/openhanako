@@ -198,4 +198,64 @@ describe("Scheduler studio cron", () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("executes notify direct-action cron jobs without creating an agent session", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "hana-scheduler-cron-"));
+    try {
+      const agentsDir = path.join(root, "agents");
+      fs.mkdirSync(path.join(agentsDir, "agent-a"), { recursive: true });
+      const executeIsolated = vi.fn();
+      const deliverNotification = vi.fn(async () => ({
+        ok: true,
+        deliveries: [{ channel: "desktop", status: "sent" }],
+      }));
+      const engine = {
+        agentsDir,
+        agents: new Map(),
+        getStudioCronStore: () => ({ listJobs: vi.fn(() => []) }),
+        getHeartbeatMaster: () => false,
+        executeIsolated,
+        deliverNotification,
+        emitDevLog: vi.fn(),
+      };
+      const scheduler = new Scheduler({ hub: { engine, eventBus: { emit: vi.fn() } } });
+      scheduler.start();
+      const executeJob = createCronSchedulerMock.mock.calls[0][0].executeJob;
+
+      const result = await executeJob({
+        id: "studio_job_notify",
+        label: "Drink Water",
+        actorAgentId: "agent-a",
+        executor: {
+          kind: "direct_action",
+          action: "notify",
+          params: {
+            title: "喝水",
+            body: "站起来活动一下",
+            channels: ["desktop"],
+          },
+        },
+      });
+
+      expect(executeIsolated).not.toHaveBeenCalled();
+      expect(deliverNotification).toHaveBeenCalledWith(
+        {
+          title: "喝水",
+          body: "站起来活动一下",
+          channels: ["desktop"],
+        },
+        { agentId: "agent-a" },
+      );
+      expect(result).toMatchObject({
+        executorKind: "direct_action",
+        action: "notify",
+        delivery: {
+          ok: true,
+          deliveries: [{ channel: "desktop", status: "sent" }],
+        },
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

@@ -110,6 +110,20 @@ function normalizeRouteExecutionContext(value, actorAgentId) {
   };
 }
 
+function normalizeRouteCreatedBy(value) {
+  if (value && typeof value === "object" && !Array.isArray(value) && typeof value.kind === "string") {
+    return JSON.parse(JSON.stringify(value));
+  }
+  return { kind: "user" };
+}
+
+function normalizeRouteExecutor(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || typeof value.kind !== "string") {
+    return null;
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+
 /** 列出工作台目录下的文件（异步） */
 async function listWorkspaceFiles(dir) {
   let entries;
@@ -368,7 +382,9 @@ export function createDeskRoute(engine, hub) {
     switch (action) {
       case "add": {
         const type = params.scheduleType || params.type;
-        if (!type || !params.schedule || !params.prompt) {
+        const executor = normalizeRouteExecutor(params.executor);
+        const requiresPrompt = !executor || executor.kind === "agent_session";
+        if (!type || !params.schedule || (requiresPrompt && !params.prompt)) {
           return c.json({ error: "scheduleType, schedule, prompt required" }, 400);
         }
         const VALID_TYPES = new Set(["at", "every", "cron"]);
@@ -395,11 +411,13 @@ export function createDeskRoute(engine, hub) {
         const job = store.addJob({
           type,
           schedule: params.schedule,
-          prompt: params.prompt,
+          prompt: typeof params.prompt === "string" ? params.prompt : "",
           label: params.label,
           model: params.model,
           actorAgentId,
           executionContext,
+          executor,
+          createdBy: normalizeRouteCreatedBy(params.createdBy),
         });
         return c.json({ ok: true, job, jobs: store.listJobs() });
       }

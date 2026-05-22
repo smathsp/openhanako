@@ -17,6 +17,7 @@ import { createTodoTool } from "../lib/tools/todo.js";
 import { createDeskManager } from "../lib/desk/desk-manager.js";
 import { CronStore } from "../lib/desk/cron-store.js";
 import { createCronTool } from "../lib/tools/cron-tool.js";
+import { createAutomationTool } from "../lib/tools/automation-tool.js";
 import { createWebFetchTool } from "../lib/tools/web-fetch.js";
 import { createStageFilesTool } from "../lib/tools/output-file-tool.js";
 import { createArtifactTool } from "../lib/tools/artifact-tool.js";
@@ -106,6 +107,7 @@ export class Agent {
     this._deskManager = null;
     this._cronStore = null;
     this._cronTool = null;
+    this._automationTool = null;
     this._stageFilesTool = null;
     // Legacy compatibility only. Fresh sessions should write files and stage
     // them via stage_files; restored old sessions may still need this schema.
@@ -309,6 +311,15 @@ export class Agent {
     );
     this._cronTool = createCronTool(this._cronStore, {
       getAutoApprove: () => this._config?.desk?.cron_auto_approve !== false,
+      confirmStore: this._cb?.getConfirmStore?.(),
+      emitEvent: (event, sp) => { if (sp) this._cb?.emitEvent?.(event, sp); },
+      getSessionPath: () => this._cb?.getCurrentSessionPath?.(),
+      getAgentId: () => this.id,
+      getSessionCwd: (sp) => this._cb?.getSessionCwd?.(sp),
+      getSessionWorkspaceFolders: (sp) => this._cb?.getSessionWorkspaceFolders?.(sp) || [],
+      getHomeCwd: (agentId) => this._cb?.getHomeCwd?.(agentId),
+    });
+    this._automationTool = createAutomationTool(this._cronStore, {
       confirmStore: this._cb?.getConfirmStore?.(),
       emitEvent: (event, sp) => { if (sp) this._cb?.emitEvent?.(event, sp); },
       getSessionPath: () => this._cb?.getCurrentSessionPath?.(),
@@ -620,6 +631,7 @@ export class Agent {
       this._webFetchTool,
       this._todoTool,
       this._cronTool,
+      this._automationTool,
       this._stageFilesTool,
       ...legacyArtifactTools,
       this._channelTool,

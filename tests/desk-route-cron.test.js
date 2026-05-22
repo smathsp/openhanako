@@ -158,4 +158,65 @@ describe("desk cron route", () => {
       },
     }));
   });
+
+  it("adds direct-action automation jobs through the cron compatibility route", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "hana-desk-cron-"));
+    roots.push(root);
+    const service = new StudioCronService({
+      hanakoHome: root,
+      agentsDir: path.join(root, "agents"),
+      getStudioId: () => "studio-main",
+    });
+    const engine = {
+      getAgent: (id) => (id === "agent-a" ? { id, agentName: "Agent A" } : null),
+      getStudioCronStore: () => service,
+      listAgents: () => [],
+    };
+    const app = await createApp(engine);
+
+    const res = await app.request("/api/desk/cron", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "add",
+        scheduleType: "cron",
+        schedule: "0 9 * * *",
+        label: "Drink Water",
+        actorAgentId: "agent-a",
+        executionContext: {
+          kind: "session_workspace",
+          cwd: "/workspace/a",
+          workspaceFolders: [],
+          sourceSessionPath: "/sessions/a.jsonl",
+          createdByAgentId: "agent-a",
+        },
+        executor: {
+          kind: "direct_action",
+          action: "notify",
+          params: {
+            title: "喝水",
+            body: "站起来活动一下",
+            channels: ["desktop"],
+          },
+        },
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.job).toMatchObject({
+      prompt: "",
+      label: "Drink Water",
+      executor: {
+        kind: "direct_action",
+        action: "notify",
+        params: {
+          title: "喝水",
+          body: "站起来活动一下",
+          channels: ["desktop"],
+        },
+      },
+      createdBy: { kind: "user" },
+    });
+  });
 });

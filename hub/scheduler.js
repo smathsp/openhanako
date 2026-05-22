@@ -4,13 +4,15 @@
  * Heartbeat：所有有 desk 的 agent 各自并行跑，不依赖焦点 agent
  * Cron：Studio 级任务列表统一调度，不随 active agent / workspace 切换而变化
  *
- * 通知策略：agent 自行决定是否调用 notify 工具，scheduler 不做通知判断。
+ * 通知策略：agent_session 由 agent 自行决定是否调用 notify 工具；
+ * direct_action:notify 由 scheduler 走统一通知网关执行。
  */
 
 import fs from "fs";
 import path from "path";
 import { createHeartbeat } from "../lib/desk/heartbeat.js";
 import { createCronScheduler } from "../lib/desk/cron-scheduler.js";
+import { executeDirectAutomationAction, getAutomationExecutor } from "../lib/desk/automation-executors.js";
 import { getLocale } from "../server/i18n.js";
 import { createFreshCompactDailyScheduler } from "../lib/fresh-compact/daily-scheduler.js";
 import { FreshCompactMaintainer } from "./fresh-compact-maintainer.js";
@@ -38,17 +40,6 @@ function normalizeCronExecutionContext(value) {
     sourceSessionPath: typeof value.sourceSessionPath === "string" && value.sourceSessionPath.trim()
       ? value.sourceSessionPath
       : null,
-  };
-}
-
-function getCronExecutor(job) {
-  if (job?.executor?.kind) return job.executor;
-  return {
-    kind: "agent_session",
-    agentId: job?.actorAgentId || job?.legacyRef?.agentId || null,
-    prompt: job?.prompt || "",
-    model: job?.model,
-    executionContext: job?.executionContext || null,
   };
 }
 
@@ -229,7 +220,12 @@ export class Scheduler {
   // ──────────── 执行 ────────────
 
   async _executeCronJob(job) {
-    const executor = getCronExecutor(job);
+    const executor = getAutomationExecutor(job);
+    if (executor.kind === "direct_action") {
+      return executeDirectAutomationAction(job, {
+        deliverNotification: (payload, opts) => this._engine.deliverNotification(payload, opts),
+      });
+    }
     if (executor.kind !== "agent_session") {
       throw new Error(`unsupported automation executor: ${executor.kind}`);
     }
@@ -237,14 +233,15 @@ export class Scheduler {
     if (!actorAgentId) {
       throw new Error(`cron job ${job.id} missing actorAgentId`);
     }
-    return this._executeCronJobForAgent(actorAgentId, job, executor);
+    await this._executeCronJobForAgent(actorAgentId, job, executor);
+    return { executorKind: "agent_session" };
   }
 
   /**
    * 执行某个 agent 的 cron 任务（active 或非 active 均可）
    * 同一 agent 同时只运行一个 cron，防止并发写冲突
    */
-  async _executeCronJobForAgent(agentId, job, executor = getCronExecutor(job)) {
+  async _executeCronJobForAgent(agentId, job, executor = getAutomationExecutor(job)) {
     // per-job 锁：同一 job 不并发，但同一 agent 的不同 job 可以并行
     if (this._executingJobs.has(job.id)) {
       log.log(`cron 跳过 ${job.id}：上一次仍在执行`);
@@ -285,7 +282,7 @@ export class Scheduler {
     }
   }
 
-  _cronExecutionOptions(job, executor = getCronExecutor(job)) {
+  _cronExecutionOptions(job, executor = getAutomationExecutor(job)) {
     const ctx = normalizeCronExecutionContext(executor.executionContext || job.executionContext);
     const opts = {};
     if (ctx.cwd) opts.cwd = ctx.cwd;

@@ -347,6 +347,86 @@ describe("Automation job read model", () => {
       prompt: "legacy",
     });
   });
+
+  it("preserves explicit notify direct-action executors without requiring a legacy prompt", () => {
+    const store = makeTmpStore();
+
+    const job = store.addJob({
+      type: "cron",
+      schedule: "0 9 * * *",
+      label: "Drink Water",
+      actorAgentId: "hana",
+      executionContext: {
+        kind: "session_workspace",
+        cwd: "/workspace",
+        workspaceFolders: [],
+        sourceSessionPath: "/sessions/source.jsonl",
+        createdByAgentId: "hana",
+      },
+      executor: {
+        kind: "direct_action",
+        action: "notify",
+        params: {
+          title: "喝水",
+          body: "站起来活动一下",
+          channels: ["desktop"],
+        },
+      },
+      createdBy: { kind: "agent", agentId: "hana", sourceSessionPath: "/sessions/source.jsonl" },
+    });
+
+    expect(job.prompt).toBe("");
+    expect(job.label).toBe("Drink Water");
+    expect(job.trigger).toEqual({ kind: "cron", expression: "0 9 * * *" });
+    expect(job.executor).toEqual({
+      kind: "direct_action",
+      action: "notify",
+      params: {
+        title: "喝水",
+        body: "站起来活动一下",
+        channels: ["desktop"],
+      },
+    });
+    expect(job.createdBy).toEqual({ kind: "agent", agentId: "hana", sourceSessionPath: "/sessions/source.jsonl" });
+  });
+
+  it("preserves explicit file.create direct-action executors", () => {
+    const store = makeTmpStore();
+
+    const job = store.addJob({
+      type: "cron",
+      schedule: "0 18 * * *",
+      label: "Daily note",
+      actorAgentId: "hana",
+      executionContext: {
+        kind: "session_workspace",
+        cwd: "/workspace",
+        workspaceFolders: [],
+        sourceSessionPath: "/sessions/source.jsonl",
+        createdByAgentId: "hana",
+      },
+      executor: {
+        kind: "direct_action",
+        action: "file.create",
+        params: {
+          relativePath: "notes/today.md",
+          content: "# Today\n",
+          ifExists: "fail",
+        },
+      },
+    });
+
+    expect(job.executor).toEqual({
+      kind: "direct_action",
+      action: "file.create",
+      params: {
+        relativePath: "notes/today.md",
+        content: "# Today\n",
+        ifExists: "fail",
+      },
+    });
+    expect(job.createdBy).toEqual({ kind: "agent", agentId: "hana" });
+  });
 });
 
 // ════════════════════════════════════════════
