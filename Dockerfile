@@ -7,14 +7,12 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-COPY packages/ packages/
-
-RUN npm install
-
 COPY . .
 
-RUN npm run build:packages && \
+RUN npm install --ignore-scripts --no-audit --no-fund && \
+    npm rebuild && \
+    node scripts/patch-pi-sdk.cjs; \
+    npm run build:packages && \
     npm run build:renderer
 
 ENV HANA_ROOT=/app
