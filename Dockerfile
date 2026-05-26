@@ -15,6 +15,8 @@ RUN npm install --ignore-scripts --no-audit --no-fund && \
     npm run build:packages && \
     npm run build:renderer
 
+RUN chmod +x docker-entrypoint.sh
+
 ENV HANA_ROOT=/app
 ENV HANA_HOME=/data
 ENV HANA_PORT=14500
@@ -24,4 +26,4 @@ VOLUME ["/data"]
 
 EXPOSE 14500
 
-CMD ["node", "server/index.js"]
+ENTRYPOINT ["./docker-entrypoint.sh"]
