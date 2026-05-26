@@ -41,9 +41,7 @@ COPY --from=builder /app/shared ./shared
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/plugins ./plugins
 COPY --from=builder /app/skills2set ./skills2set
-COPY --from=builder /app/desktop/src/locales ./desktop/src/locales
-COPY --from=builder /app/desktop/src/assets ./desktop/src/assets
-COPY --from=builder /app/desktop/src/themes ./desktop/src/themes
+COPY --from=builder /app/desktop/src ./desktop/src
 COPY --from=builder /app/desktop/dist-renderer ./desktop/dist-renderer
 
 RUN chmod +x docker-entrypoint.sh
