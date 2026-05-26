@@ -129,6 +129,44 @@ describe('PreviewEditor file sync', () => {
     expect(platform.writeFile).not.toHaveBeenCalled();
   });
 
+  it('saves remote editable documents through the injected save handler', async () => {
+    const ref = createRef<PreviewEditorHandle>();
+    const loadedVersion = { mtimeMs: 10, size: 8, sha256: 'loaded' };
+    const nextVersion = { mtimeMs: 20, size: 11, sha256: 'next' };
+    const saveDocument = vi.fn(async () => ({
+      ok: true,
+      conflict: false,
+      version: nextVersion,
+    }));
+    const onContentChange = vi.fn();
+
+    render(
+      <PreviewEditor
+        ref={ref}
+        content="original"
+        fileVersion={loadedVersion}
+        mode="markdown"
+        saveDocument={saveDocument}
+        onContentChange={onContentChange}
+      />,
+    );
+
+    await act(async () => {
+      ref.current?.getView()?.dispatch({
+        changes: { from: 0, to: 'original'.length, insert: 'remote edit' },
+        annotations: Transaction.userEvent.of('input.type'),
+      });
+      vi.advanceTimersByTime(700);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(saveDocument).toHaveBeenCalledWith('remote edit', loadedVersion);
+    expect(platform.writeFileIfUnchanged).not.toHaveBeenCalled();
+    expect(platform.writeFile).not.toHaveBeenCalled();
+    expect(onContentChange).toHaveBeenLastCalledWith('remote edit', nextVersion);
+  });
+
   it('preserves the cursor when parent content is refreshed', async () => {
     const ref = createRef<PreviewEditorHandle>();
 

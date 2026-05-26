@@ -41,7 +41,7 @@ import {
   clearAppFileDragPayload,
   readAppFileDragPayload,
 } from '../utils/app-file-drag';
-import type { FileVersion } from '../types';
+import type { FileVersion, VersionedWriteResult } from '../types';
 
 /* ── Types ── */
 
@@ -55,10 +55,16 @@ export interface PreviewEditorStats {
   totalChars: number;
 }
 
+export type PreviewEditorSaveDocument = (
+  content: string,
+  expectedVersion?: FileVersion | null,
+) => Promise<VersionedWriteResult>;
+
 export interface PreviewEditorProps {
   content: string;
   filePath?: string;
   fileVersion?: FileVersion | null;
+  saveDocument?: PreviewEditorSaveDocument;
   mode: 'markdown' | 'code' | 'csv' | 'text';
   language?: string | null;
   onSelectionChange?: (view: EditorView) => void;
@@ -240,7 +246,7 @@ function setupFileChangeListener() {
 /* ── Editor Component ── */
 
 export const PreviewEditor = forwardRef<PreviewEditorHandle, PreviewEditorProps>(
-  function PreviewEditor({ content, filePath, fileVersion, mode, language, onSelectionChange, onStatsChange, onContentChange, readOnly = false }, ref) {
+  function PreviewEditor({ content, filePath, fileVersion, saveDocument, mode, language, onSelectionChange, onStatsChange, onContentChange, readOnly = false }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
     const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -253,6 +259,8 @@ export const PreviewEditor = forwardRef<PreviewEditorHandle, PreviewEditorProps>
     const lastCheckpointAtRef = useRef<number>(0);
     const filePathRef = useRef(filePath);
     filePathRef.current = filePath;
+    const saveDocumentRef = useRef(saveDocument);
+    saveDocumentRef.current = saveDocument;
     const selectionCbRef = useRef(onSelectionChange);
     selectionCbRef.current = onSelectionChange;
     const statsCbRef = useRef(onStatsChange);
@@ -345,31 +353,47 @@ export const PreviewEditor = forwardRef<PreviewEditorHandle, PreviewEditorProps>
 
     const performSave = useCallback(async ({ text, revision }: SaveJob) => {
       const fp = filePathRef.current;
-      if (!fp) return;
+      const saveRemoteDocument = saveDocumentRef.current;
+      if (!fp && !saveRemoteDocument) return;
 
       try {
-        await createCheckpointIfDue(fp);
+        if (fp) await createCheckpointIfDue(fp);
         if (revision !== docRevisionRef.current || fp !== filePathRef.current) return;
         const expectedVersion = diskVersionRef.current;
         let nextVersion: FileVersion | null | undefined;
 
-        if (window.platform?.writeFileIfUnchanged) {
-          const result = await window.platform.writeFileIfUnchanged(fp, text, expectedVersion);
+        if (saveRemoteDocument) {
+          const result = await saveRemoteDocument(text, expectedVersion);
           if (!result?.ok) {
             if (result?.conflict) {
               const tFn = window.t ?? ((p: string) => p);
               throw new Error(tFn('settings.fileChangedOnDisk'));
             }
-            throw new Error('write-file-if-unchanged returned false');
+            throw new Error('saveDocument returned false');
           }
           nextVersion = result.version ?? null;
           if (result.version) diskVersionRef.current = result.version;
           rememberSelfWrite(text);
         } else {
-          rememberSelfWrite(text);
-          const ok = await window.platform?.writeFile(fp, text);
-          if (ok === false) throw new Error('write-file returned false');
-          nextVersion = undefined;
+          if (!fp) return;
+          if (window.platform?.writeFileIfUnchanged) {
+            const result = await window.platform.writeFileIfUnchanged(fp, text, expectedVersion);
+            if (!result?.ok) {
+              if (result?.conflict) {
+                const tFn = window.t ?? ((p: string) => p);
+                throw new Error(tFn('settings.fileChangedOnDisk'));
+              }
+              throw new Error('write-file-if-unchanged returned false');
+            }
+            nextVersion = result.version ?? null;
+            if (result.version) diskVersionRef.current = result.version;
+            rememberSelfWrite(text);
+          } else {
+            rememberSelfWrite(text);
+            const ok = await window.platform?.writeFile(fp, text);
+            if (ok === false) throw new Error('write-file returned false');
+            nextVersion = undefined;
+          }
         }
         lastSavedContentRef.current = text;
 
