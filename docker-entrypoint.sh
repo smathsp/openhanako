@@ -3,9 +3,10 @@ set -e
 
 NETWORK_FILE="$HANA_HOME/server-network.json"
 
-if [ ! -f "$NETWORK_FILE" ]; then
-  mkdir -p "$HANA_HOME"
-  cat > "$NETWORK_FILE" <<EOF
+mkdir -p "$HANA_HOME"
+
+# Docker 容器必须监听 0.0.0.0 才能从外部访问
+cat > "$NETWORK_FILE" <<EOF
 {
   "schemaVersion": 1,
   "mode": "lan",
@@ -15,7 +16,6 @@ if [ ! -f "$NETWORK_FILE" ]; then
   "updatedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 EOF
-  echo "[entrypoint] created $NETWORK_FILE (lan mode, 0.0.0.0)"
-fi
+echo "[entrypoint] server-network.json set to lan mode (0.0.0.0)"
 
 exec node server/index.js
