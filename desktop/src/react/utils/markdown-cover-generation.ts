@@ -1,13 +1,12 @@
 import { hanaFetch } from '../hooks/use-hana-fetch';
 import { useStore } from '../stores';
-
-const DARK_THEMES = new Set(['midnight', 'midnight-contrast']);
+import registry from '../../shared/theme-registry';
 
 export type CoverThemeTone = 'light' | 'dark';
 
 export function getCoverThemeTone(): CoverThemeTone {
   const theme = document.documentElement.getAttribute('data-theme') || document.documentElement.dataset.theme || '';
-  return DARK_THEMES.has(theme) ? 'dark' : 'light';
+  return registry.isPaperTextureBlockedTheme(theme) ? 'dark' : 'light';
 }
 
 export async function requestMarkdownCoverGeneration({

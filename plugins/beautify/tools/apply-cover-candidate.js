@@ -1,12 +1,9 @@
 import path from "node:path";
-import {
-  MARKDOWN_COVER_PROMPT_PRESET,
-  applyMarkdownCoverFromGeneratedFile,
-} from "../lib/markdown-cover-service.js";
+import { applyMarkdownCoverFromGeneratedFile } from "../lib/markdown-cover-service.js";
 import { isBeautifyEnabledForAgentConfig } from "../lib/availability.js";
 
 export const name = "apply-cover-candidate";
-export const description = "把一个已经生成好的图片文件应用为 Markdown cover，并写回 frontmatter。";
+export const description = "把一个已有图片文件应用为 Markdown cover，并写回 frontmatter。";
 
 export { isBeautifyEnabledForAgentConfig as isEnabledForAgentConfig };
 
@@ -14,9 +11,7 @@ export const parameters = {
   type: "object",
   properties: {
     targetFilePath: { type: "string", description: "Markdown 文件绝对路径。" },
-    generatedFilePath: { type: "string", description: "已生成图片的绝对路径。" },
-    prompt: { type: "string", description: "生成该图片所用提示词。" },
-    preferredRatio: { type: "string", description: "期望比例，默认 3:2。" },
+    generatedFilePath: { type: "string", description: "已有图片的绝对路径，可以来自生图工具、内置头图或用户本地图片。" },
     pixelWidth: { type: "number", description: "图片像素宽，可选。" },
     pixelHeight: { type: "number", description: "图片像素高，可选。" },
   },
@@ -35,9 +30,6 @@ export async function execute(input) {
     const result = await applyMarkdownCoverFromGeneratedFile({
       markdownFilePath: input.targetFilePath,
       generatedFilePath: input.generatedFilePath,
-      prompt: input.prompt || "",
-      promptPreset: MARKDOWN_COVER_PROMPT_PRESET,
-      preferredRatio: input.preferredRatio || "3:2",
       pixelWidth: input.pixelWidth,
       pixelHeight: input.pixelHeight,
     });

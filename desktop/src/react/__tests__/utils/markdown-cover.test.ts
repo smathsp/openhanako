@@ -12,6 +12,7 @@ describe('markdown cover utilities', () => {
       'title: Demo',
       'cover:',
       '  image: 文本附件/cover.png',
+      '  actualRatio: 3:2',
       '  displayHeight: 360',
       '  positionX: 50',
       '  positionY: 42',
@@ -23,6 +24,7 @@ describe('markdown cover utilities', () => {
 
     expect(parseMarkdownCover(markdown)).toMatchObject({
       image: '文本附件/cover.png',
+      actualRatio: '3:2',
       displayHeight: 360,
       positionX: 50,
       positionY: 42,
@@ -30,13 +32,20 @@ describe('markdown cover utilities', () => {
     expect(stripMarkdownFrontMatterForPreview(markdown)).toBe('# Demo\n\nBody');
   });
 
-  it('updates only layout fields while preserving unrelated frontmatter and cover fields', () => {
+  it('updates layout fields while preserving presentation metadata and removing deprecated generation metadata', () => {
     const markdown = [
       '---',
       'title: Demo',
       'cover:',
       '  image: 文本附件/cover.png',
+      '  prompt: hidden generation prompt',
       '  promptPreset: modern-anime-paper-key-visual',
+      '  preferredRatio: 3:2',
+      '  actualRatio: 3:2',
+      '  generatedAt: 2026-05-26T10:11:12.000Z',
+      '  generator:',
+      '    provider: openai',
+      '    model: gpt-image-2',
       '  positionY: 42',
       'tags:',
       '  - writing',
@@ -54,7 +63,13 @@ describe('markdown cover utilities', () => {
     expect(next).toContain('title: Demo');
     expect(next).toContain('tags:\n  - writing');
     expect(next).toContain('image: 文本附件/cover.png');
-    expect(next).toContain('promptPreset: modern-anime-paper-key-visual');
+    expect(next).toContain('actualRatio: 3:2');
+    expect(next).not.toContain('hidden generation prompt');
+    expect(next).not.toContain('promptPreset:');
+    expect(next).not.toContain('preferredRatio:');
+    expect(next).not.toContain('generatedAt:');
+    expect(next).not.toContain('generator:');
+    expect(next).not.toContain('provider: openai');
     expect(next).toContain('displayHeight: 420');
     expect(next).toContain('positionX: 50');
     expect(next).toContain('positionY: 64');

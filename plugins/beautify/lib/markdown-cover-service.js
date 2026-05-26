@@ -3,10 +3,10 @@ import path from "node:path";
 import YAML from "js-yaml";
 import { atomicWriteSync } from "../../../shared/safe-fs.js";
 
-export const MARKDOWN_COVER_PROMPT_PRESET = "modern-anime-paper-key-visual";
 export const MARKDOWN_ATTACHMENT_DIR_NAME = "文本附件";
 
 const FRONT_MATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
+const SUPPORTED_IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 
 function assertAbsoluteFilePath(label, filePath) {
   if (typeof filePath !== "string" || !path.isAbsolute(filePath)) {
@@ -83,14 +83,84 @@ function ratioFromDimensions(width, height) {
   return `${Math.round(width) / divisor}:${Math.round(height) / divisor}`;
 }
 
-function normalizeGenerator(generator = {}) {
-  const provider = generator.provider || generator.providerId || null;
-  const model = generator.model || generator.modelId || null;
-  if (!provider && !model) return undefined;
-  return {
-    ...(provider ? { provider } : {}),
-    ...(model ? { model } : {}),
-  };
+function readImageDimensionsFromHeader(filePath) {
+  const fd = fs.openSync(filePath, "r");
+  try {
+    const buf = Buffer.alloc(64 * 1024);
+    const bytesRead = fs.readSync(fd, buf, 0, buf.length, 0);
+    return parseImageDimensions(buf.subarray(0, bytesRead));
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function parseImageDimensions(buf) {
+  if (buf.length < 12) return null;
+
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+    if (buf.length < 24) return null;
+    return {
+      width: buf.readUInt32BE(16),
+      height: buf.readUInt32BE(20),
+    };
+  }
+
+  if (buf[0] === 0xff && buf[1] === 0xd8) {
+    let offset = 2;
+    while (offset + 9 < buf.length) {
+      if (buf[offset] !== 0xff) break;
+      const marker = buf[offset + 1];
+      if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
+        return {
+          height: buf.readUInt16BE(offset + 5),
+          width: buf.readUInt16BE(offset + 7),
+        };
+      }
+      const segLen = buf.readUInt16BE(offset + 2);
+      if (!Number.isFinite(segLen) || segLen <= 0) break;
+      offset += 2 + segLen;
+    }
+  }
+
+  if (buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP") {
+    const type = buf.toString("ascii", 12, 16);
+    if (type === "VP8X" && buf.length >= 30) {
+      return {
+        width: 1 + buf.readUIntLE(24, 3),
+        height: 1 + buf.readUIntLE(27, 3),
+      };
+    }
+    if (type === "VP8 " && buf.length >= 30) {
+      return {
+        width: buf.readUInt16LE(26) & 0x3fff,
+        height: buf.readUInt16LE(28) & 0x3fff,
+      };
+    }
+    if (type === "VP8L" && buf.length >= 25) {
+      const bits = buf.readUInt32LE(21);
+      return {
+        width: (bits & 0x3fff) + 1,
+        height: ((bits >> 14) & 0x3fff) + 1,
+      };
+    }
+  }
+
+  if (buf.toString("ascii", 0, 6) === "GIF87a" || buf.toString("ascii", 0, 6) === "GIF89a") {
+    if (buf.length < 10) return null;
+    return {
+      width: buf.readUInt16LE(6),
+      height: buf.readUInt16LE(8),
+    };
+  }
+
+  return null;
+}
+
+function assertSupportedImageFilePath(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (!SUPPORTED_IMAGE_EXTS.has(ext)) {
+    throw new Error("generatedFilePath must point to a supported image file");
+  }
 }
 
 function serializeFrontMatter(data, body) {
@@ -102,38 +172,17 @@ function serializeFrontMatter(data, body) {
   return `---\n${yaml}\n---\n${body}`;
 }
 
-export function buildCoverPromptCompilerPrompt({
-  themeTone = "light",
-  preferredRatio = "3:2",
-  userGuidance = "",
-} = {}) {
-  const tone = themeTone === "dark" ? "深色主题，低照度、克制高光、暗部仍保留纸张纤维" : "浅色主题，柔和暖光、低对比、纸面留白";
-  return [
-    "你要为一篇 Markdown 文档生成一条图片生成模型可直接使用的英文提示词。",
-    `画幅固定为横向 ${preferredRatio}。`,
-    "固定画风：现代 Anime 风格的精致动画电影 key visual，强烈纸张质感、印刷纹理、装帧级细节、细腻颗粒、温润材料感。",
-    `主题光感：${tone}。`,
-    "内容策略：先阅读文档，再提炼文章内容的意象主题。画面应具有电影感，像一帧有故事的电影场景，通过场面调度、真实空间、人物动作、光线、道具关系、环境痕迹表达主题。",
-    "审美方向：文学气息、星空与幻想感可以进入画面，但必须由场景本身承载，保持情绪厚度和现实质感。",
-    "输出要求：只输出最终图片提示词，一段英文，自然可读。",
-    userGuidance ? `用户补充方向：${userGuidance}` : "",
-  ].filter(Boolean).join("\n");
-}
-
 export async function applyMarkdownCoverFromGeneratedFile({
   markdownFilePath,
   generatedFilePath,
-  prompt,
-  promptPreset = MARKDOWN_COVER_PROMPT_PRESET,
-  preferredRatio = "3:2",
   actualRatio,
   pixelWidth,
   pixelHeight,
-  generator,
   now = new Date(),
 } = {}) {
   assertAbsoluteFilePath("markdownFilePath", markdownFilePath);
   assertAbsoluteFilePath("generatedFilePath", generatedFilePath);
+  assertSupportedImageFilePath(generatedFilePath);
 
   const markdownStat = fs.statSync(markdownFilePath);
   if (!markdownStat.isFile()) throw new Error("markdownFilePath must point to a file");
@@ -146,20 +195,22 @@ export async function applyMarkdownCoverFromGeneratedFile({
 
   const rawMarkdown = fs.readFileSync(markdownFilePath, "utf-8");
   const { data, body } = splitFrontMatter(rawMarkdown);
+  const detectedDimensions = (
+    Number.isFinite(pixelWidth) && Number.isFinite(pixelHeight)
+      ? null
+      : readImageDimensionsFromHeader(generatedFilePath)
+  );
+  const resolvedPixelWidth = Number.isFinite(pixelWidth) ? Math.round(pixelWidth) : detectedDimensions?.width;
+  const resolvedPixelHeight = Number.isFinite(pixelHeight) ? Math.round(pixelHeight) : detectedDimensions?.height;
   const cover = {
     image: target.relativePath,
-    prompt: String(prompt || "").trim(),
-    promptPreset,
-    preferredRatio,
-    actualRatio: actualRatio || ratioFromDimensions(pixelWidth, pixelHeight) || null,
-    pixelWidth: Number.isFinite(pixelWidth) ? Math.round(pixelWidth) : null,
-    pixelHeight: Number.isFinite(pixelHeight) ? Math.round(pixelHeight) : null,
+    actualRatio: actualRatio || ratioFromDimensions(resolvedPixelWidth, resolvedPixelHeight) || null,
+    pixelWidth: Number.isFinite(resolvedPixelWidth) ? resolvedPixelWidth : null,
+    pixelHeight: Number.isFinite(resolvedPixelHeight) ? resolvedPixelHeight : null,
     displayWidth: 100,
     displayHeight: 320,
     positionX: 50,
     positionY: 50,
-    generatedAt: now.toISOString(),
-    generator: normalizeGenerator(generator),
   };
 
   for (const key of Object.keys(cover)) {
@@ -175,19 +226,4 @@ export async function applyMarkdownCoverFromGeneratedFile({
     markdownFilePath,
     attachmentPath: target.absolutePath,
   };
-}
-
-export function resolveGeneratedImagePath(generatedDir, fileName) {
-  if (typeof generatedDir !== "string" || !path.isAbsolute(generatedDir)) {
-    throw new Error("generatedDir must be an absolute path");
-  }
-  if (typeof fileName !== "string" || !fileName.trim()) {
-    throw new Error("generated image file name is required");
-  }
-  const resolved = path.resolve(generatedDir, fileName);
-  const root = path.resolve(generatedDir);
-  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-    throw new Error("generated image path escapes generatedDir");
-  }
-  return resolved;
 }

@@ -2,7 +2,7 @@
   "id": "beautify",
   "name": "Beautify",
   "version": "0.1.0",
-  "description": "审美增强工具：为 Markdown 文档生成和应用 Notion-like cover。",
+  "description": "审美增强工具：把 Agent 准备好的图片应用为 Markdown Notion-like cover。",
   "trust": "full-access",
   "hidden": true,
   "activationEvents": ["onStartup"],

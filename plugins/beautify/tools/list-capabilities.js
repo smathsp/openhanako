@@ -12,15 +12,15 @@ export async function execute() {
   return {
     content: [{
       type: "text",
-      text: "Beautify 当前支持 Markdown cover：根据文档内容生成 3:2 横向、现代 Anime 纸张质感、电影感和故事感的题图，并写回 Markdown frontmatter。",
+      text: "Beautify 当前支持 Markdown cover 写回：Agent 先准备一张图片，可以来自生图工具、未来的内置头图库或用户本地图片，再用 Beautify 把图片复制到附件文件夹并写入 cover frontmatter。",
     }],
     details: {
       capabilities: [{
         id: "markdown-cover",
         target: "markdown",
         tools: ["beautify_create-cover", "beautify_apply-cover-candidate"],
-        promptPreset: "modern-anime-paper-key-visual",
-        preferredRatio: "3:2",
+        imageRatio: "3:2",
+        responsibility: "apply-existing-image",
       }],
     },
   };

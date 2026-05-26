@@ -1,8 +1,5 @@
 export interface MarkdownCover {
   image: string;
-  prompt?: string;
-  promptPreset?: string;
-  preferredRatio?: string;
   actualRatio?: string;
   pixelWidth?: number;
   pixelHeight?: number;
@@ -10,7 +7,6 @@ export interface MarkdownCover {
   displayHeight?: number;
   positionX?: number;
   positionY?: number;
-  generatedAt?: string;
 }
 
 export interface MarkdownCoverLayoutPatch {
@@ -29,6 +25,7 @@ interface FrontMatterParts {
 
 const FRONT_MATTER_RE = /^---(\r?\n)([\s\S]*?)(?:\r?\n)---(?:\r?\n|$)/;
 const EXPLICIT_PROTOCOL_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+const DEPRECATED_COVER_FIELDS = new Set(['prompt', 'promptPreset', 'preferredRatio', 'generatedAt', 'generator']);
 
 function splitFrontMatter(markdown: string): FrontMatterParts {
   const match = markdown.match(FRONT_MATTER_RE);
@@ -91,7 +88,7 @@ export function parseMarkdownCover(markdown: string): MarkdownCover | null {
 
   if (typeof rawCover.image !== 'string' || !rawCover.image.trim()) return null;
   const cover: MarkdownCover = { image: rawCover.image.trim() };
-  for (const key of ['prompt', 'promptPreset', 'preferredRatio', 'actualRatio', 'generatedAt'] as const) {
+  for (const key of ['actualRatio'] as const) {
     if (typeof rawCover[key] === 'string') cover[key] = rawCover[key];
   }
   for (const key of ['pixelWidth', 'pixelHeight', 'displayWidth', 'displayHeight', 'positionX', 'positionY'] as const) {
@@ -108,6 +105,25 @@ function scalarLine(key: string, value: number): string {
   return `  ${key}: ${Math.round(value)}`;
 }
 
+function stripDeprecatedCoverFields(lines: string[], range: { start: number; end: number }): void {
+  const cleaned: string[] = [];
+  let index = range.start + 1;
+  while (index < range.end) {
+    const line = lines[index];
+    const match = line.match(/^\s{2}([A-Za-z][A-Za-z0-9_]*):/);
+    if (match && DEPRECATED_COVER_FIELDS.has(match[1])) {
+      index += 1;
+      while (index < range.end && /^\s{4,}/.test(lines[index])) index += 1;
+      continue;
+    }
+    cleaned.push(line);
+    index += 1;
+  }
+
+  lines.splice(range.start + 1, range.end - range.start - 1, ...cleaned);
+  range.end = range.start + 1 + cleaned.length;
+}
+
 export function updateMarkdownCoverLayout(markdown: string, patch: MarkdownCoverLayoutPatch): string {
   const parts = splitFrontMatter(markdown);
   if (!parts.hasFrontMatter) return markdown;
@@ -120,6 +136,7 @@ export function updateMarkdownCoverLayout(markdown: string, patch: MarkdownCover
   }
 
   const nextLines = [...lines];
+  stripDeprecatedCoverFields(nextLines, range);
   const updates: Array<[keyof MarkdownCoverLayoutPatch, number]> = [];
   for (const key of ['displayWidth', 'displayHeight', 'positionX', 'positionY'] as const) {
     const value = patch[key];

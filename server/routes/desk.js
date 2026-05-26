@@ -274,20 +274,30 @@ export function createDeskRoute(engine, hub) {
   }
 
   function buildBeautifyCoverPrompt({ filePath, themeTone, userGuidance }) {
+    const themeGuidance = themeTone === "dark"
+      ? "深色主题：低照度、克制高光、暗部仍保留纸张纤维和材料层次。"
+      : "浅色主题：柔和暖光、低对比、干净留白、纸面纤维清晰。";
     return [
       "这是一个由编辑器 UI 按钮发起的 Beautify 后台任务，目标 Markdown 路径已经由按钮明确给出。",
       `目标文件：${filePath}`,
       "",
-      "请调用 beautify_create-cover 工具，为这个 Markdown 文件生成并应用 cover。",
-      "工具参数：",
-      `- targetFilePath: ${filePath}`,
-      "- mode: apply",
-      "- preferredRatio: 3:2",
-      `- themeTone: ${themeTone === "dark" ? "dark" : "light"}`,
-      userGuidance ? `- userGuidance: ${userGuidance}` : "",
+      "请按这个顺序完成：",
+      "1. 阅读目标 Markdown 文件，理解文章内容和情绪。",
+      "2. 你自己写一条给生图模型使用的英文提示词。",
+      "3. 调用 image-gen_generate-image 生成 1 张图片，ratio 固定传 3:2，resolution 传 2k。",
+      "4. 用 wait 和 check_pending_tasks 查询本会话的图片生成任务，直到任务 resolved 或失败。",
+      "5. 图片生成成功后，从 resolved 结果的 sessionFiles[0].filePath 取生成图片绝对路径。",
+      "6. 调用 beautify_create-cover，把生成图片应用到 Markdown：",
+      `   - targetFilePath: ${filePath}`,
+      "   - generatedFilePath: <上一步生成图片的绝对路径>",
       "",
-      "生成策略：阅读文档内容，提炼文章意象主题，画面采用现代 Anime、强纸张质感、电影感、故事感，以真实场景和场面调度承载主题。",
-      "完成后用一句话说明任务已提交或失败原因。",
+      "画面方向：现代 Anime 风格的精致动画电影 key visual，强纸张质感、印刷纹理、细腻颗粒、温润材料感；根据文章内容提炼意象主题，尽量通过真实场景、人物动作、光线、道具关系、环境痕迹来表达，而不是堆砌漂浮符号。",
+      "审美要求：有电影感、有故事感、有文学气息；星空和幻想感可以出现，但必须由场景自然承载，有现实重量和情感理由。",
+      themeGuidance,
+      userGuidance ? `用户补充方向：${userGuidance}` : "",
+      "",
+      "边界：Beautify 工具只负责把已有图片复制到附件文件夹并写入 cover frontmatter。图片来源未来也可以是内置头图库或用户本地图片，但当前按钮任务默认走生图工具。不要用 Beautify 工具生成提示词或提交生图任务，不要把生图 prompt、模型、provider、生成时间写进 Markdown。",
+      "完成后用一句话说明图片已经应用为 cover，或说明失败原因。",
     ].filter(Boolean).join("\n");
   }
 
@@ -384,7 +394,7 @@ export function createDeskRoute(engine, hub) {
         finishedAt: Date.now(),
         summary: error
           ? `Cover 生成失败：${error}`
-          : `已提交 ${path.basename(filePath)} 的 cover 生成任务`,
+          : `已应用 ${path.basename(filePath)} 的 cover`,
         ...(result?.sessionPath ? { sessionFile: path.basename(result.sessionPath) } : {}),
       });
       if (updated) emitActivityUpdate(updated, result?.sessionPath || null);
