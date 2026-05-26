@@ -1,0 +1,23 @@
+services:
+  hanako:
+    image: ghcr.io/smathsp/openhanako:main
+    container_name: hanako
+    restart: unless-stopped
+    ports:
+      - "14500:14500"
+    volumes:
+      - hanako-data:/data
+    environment:
+      - HANA_PORT=14500
+      # LLM API 配置（按需填写）
+      # - DASHSCOPE_API_KEY=your-key
+      # - OPENAI_API_KEY=your-key
+      # - VOLCENGINE_API_KEY=your-key
+    # 如需使用 bubblewrap 沙箱，取消下面注释（需要特权模式）
+    # cap_add:
+    #   - SYS_ADMIN
+    # security_opt:
+    #   - apparmor:unconfined
+
+volumes:
+  hanako-data:
